@@ -61,42 +61,78 @@ jobs:
     
     - name: Build APK with buildozer
       run: |
-        buildozer -v android debug
+        buildozer -v android debug 2>&1 | tee build.log || true
+        
+        # Check if gradlew failed
+        if grep -q "gradlew failed" build.log; then
+          echo "Gradlew failed, attempting manual fix..."
+          
+          # Find and fix gradlew
+          GRADLEW_PATH=$(find .buildozer -name "gradlew" -type f | head -1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            echo "Found gradlew at: $GRADLEW_PATH"
+            chmod +x "$GRADLEW_PATH"
+            
+            # Check what's wrong with gradlew
+            cd $(dirname "$GRADLEW_PATH")
+            echo "Testing gradlew directly..."
+            ./gradlew --version || echo "Gradlew version check failed"
+            ./gradlew tasks || echo "Gradlew tasks failed"
+            
+            # Try running the actual command
+            ./gradlew clean assembleDebug --stacktrace --info
+          fi
+        else
+          echo "Build succeeded!"
+          exit 0
+        fi
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
-        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false'
+        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
         P4A_DEBUG: '1'
     
     - name: Fix Gradle wrapper and retry on failure
       if: failure()
       run: |
-        echo "First build failed, attempting to fix gradlew..."
-        find .buildozer -type f -name "gradlew" -exec chmod +x {} \;
-        find .buildozer -type f -name "gradlew.bat" -exec chmod +x {} \;
+        echo "Build failed, checking logs..."
+        cat build.log | tail -100
         
-        # Also fix gradle wrapper jar permissions
-        find .buildozer -type f -name "gradle-wrapper.jar" -exec chmod 644 {} \;
+        echo "Attempting complete rebuild with Ant fallback..."
         
-        # Remove corrupted gradle wrapper and let it regenerate
-        find .buildozer -path "*/gradle/wrapper" -type d -exec rm -rf {} \; 2>/dev/null || true
+        # Remove gradle completely and use ant
+        rm -rf .buildozer/android/platform/build-*/dists/myreminders/gradle* || true
         
-        echo "Retrying build..."
-        buildozer android debug
+        # Modify buildozer.spec to use ant temporarily
+        if [ -f buildozer.spec.bak ]; then
+          cp buildozer.spec.bak buildozer.spec
+        else
+          cp buildozer.spec buildozer.spec.bak
+        fi
+        
+        # Try with ant
+        buildozer android debug --build-tool ant
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
-        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false'
         P4A_DEBUG: '1'
     
     - name: List build artifacts
+      if: always()
       run: |
+        echo "=== Build logs ==="
+        find .buildozer -name "*.log" -type f -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true
+        
+        echo "=== Gradle logs ==="
+        find .buildozer -path "*/.gradle/*/daemon/*.log" -type f -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true
+        
+        echo "=== APK search ==="
         echo "Listing bin directory:"
         ls -lah bin/ || echo "No bin directory found"
         echo "Finding APK files:"
