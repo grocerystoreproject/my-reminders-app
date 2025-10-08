@@ -38,24 +38,6 @@ jobs:
         sudo apt-get install -y libgles2-mesa-dev libglew-dev
         sudo apt-get install -y cython3
     
-    - name: Cache buildozer global directory
-      if: false
-      uses: actions/cache@v4
-      with:
-        path: ~/.buildozer
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-
-    
-    - name: Cache buildozer directory
-      if: false
-      uses: actions/cache@v4
-      with:
-        path: .buildozer
-        key: ${{ runner.os }}-buildozer-local-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-local-
-    
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
@@ -72,10 +54,10 @@ jobs:
       run: |
         yes | sdkmanager --licenses || true
     
-    - name: Clean previous builds
+    - name: Clean all buildozer directories
       run: |
-        rm -rf .buildozer/android/platform/build-*/dists/myreminders || true
-        rm -rf .buildozer/android/platform/build-*/build/other_builds || true
+        rm -rf .buildozer/android/platform/build-* || true
+        rm -rf ~/.buildozer || true
     
     - name: Build APK with buildozer
       run: |
@@ -86,20 +68,32 @@ jobs:
         ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
-        GRADLE_OPTS: '-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m'
+        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false'
+        P4A_DEBUG: '1'
     
-    - name: Fix gradlew permissions if build failed
+    - name: Fix Gradle wrapper and retry on failure
       if: failure()
       run: |
-        find .buildozer -name gradlew -exec chmod +x {} \; || true
-        buildozer -v android debug
+        echo "First build failed, attempting to fix gradlew..."
+        find .buildozer -type f -name "gradlew" -exec chmod +x {} \;
+        find .buildozer -type f -name "gradlew.bat" -exec chmod +x {} \;
+        
+        # Also fix gradle wrapper jar permissions
+        find .buildozer -type f -name "gradle-wrapper.jar" -exec chmod 644 {} \;
+        
+        # Remove corrupted gradle wrapper and let it regenerate
+        find .buildozer -path "*/gradle/wrapper" -type d -exec rm -rf {} \; 2>/dev/null || true
+        
+        echo "Retrying build..."
+        buildozer android debug
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
-        GRADLE_OPTS: '-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m'
+        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false'
+        P4A_DEBUG: '1'
     
     - name: List build artifacts
       run: |
