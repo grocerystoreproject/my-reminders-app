@@ -70,6 +70,10 @@ jobs:
       run: |
         yes | sdkmanager --licenses || true
     
+    - name: Clean previous builds
+      run: |
+        rm -rf .buildozer/android/platform/build-*/dists/myreminders || true
+    
     - name: Build APK with buildozer
       run: |
         buildozer -v android debug
@@ -79,6 +83,7 @@ jobs:
         ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
+        GRADLE_OPTS: '-Xmx2048m -Dorg.gradle.jvmargs=-Xmx2048m'
     
     - name: List build artifacts
       run: |
