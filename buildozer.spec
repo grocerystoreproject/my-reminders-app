@@ -7,7 +7,7 @@ source.include_exts = py,png,jpg,kv,atlas,json
 source.include_patterns = service/*
 version = 2.5
 
-requirements = python3,kivy==2.3.0,android,pyjnius
+requirements = python3,kivy==2.2.1,android,pyjnius
 
 orientation = portrait
 fullscreen = 0
@@ -16,6 +16,7 @@ android.permissions = INTERNET,VIBRATE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,SCHEDULE
 
 android.api = 33
 android.minapi = 21
+android.ndk = 25b
 android.accept_sdk_license = True
 
 android.services = ReminderService:service/main.py
@@ -27,7 +28,7 @@ android.gradle_dependencies = com.google.android.material:material:1.9.0
 
 android.archs = arm64-v8a
 
-p4a.branch = master
+p4a.branch = develop
 p4a.bootstrap = sdl2
 
 [buildozer]
