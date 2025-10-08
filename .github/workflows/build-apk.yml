@@ -32,7 +32,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+        sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libtool-bin libltdl-dev
     
     - name: Cache buildozer global directory
       uses: actions/cache@v4
@@ -59,11 +59,16 @@ jobs:
     - name: Make buildozer executable
       run: chmod +x $(which buildozer) || true
     
+    - name: Accept Android SDK licenses
+      run: |
+        yes | sdkmanager --licenses || true
+    
     - name: Build APK with buildozer
       run: |
-        yes | buildozer android debug
+        buildozer -v android debug
       env:
         ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        USE_PREBUILT_LIBS: '1'
     
     - name: List build artifacts
       run: |
