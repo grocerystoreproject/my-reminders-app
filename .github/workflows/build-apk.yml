@@ -35,6 +35,7 @@ jobs:
         sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libtool-bin libltdl-dev ccache
         sudo apt-get install -y libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
         sudo apt-get install -y libgles2-mesa-dev libglew-dev
+        sudo apt-get install -y cython3
     
     - name: Cache buildozer global directory
       uses: actions/cache@v4
@@ -59,6 +60,7 @@ jobs:
         pip install buildozer==1.5.0
         pip install cython==0.29.33
         pip install virtualenv
+        pip install sh
     
     - name: Make buildozer executable
       run: chmod +x $(which buildozer) || true
