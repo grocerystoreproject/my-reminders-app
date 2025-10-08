@@ -35,6 +35,7 @@ p4a.branch = master
 p4a.bootstrap = sdl2
 p4a.source_dir = 
 p4a.local_recipes =
+p4a.gradle_version = 8.0
 
 [buildozer]
 log_level = 2
