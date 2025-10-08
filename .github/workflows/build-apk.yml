@@ -2,6 +2,9 @@ name: Build My Reminders APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build-apk:
@@ -22,21 +25,62 @@ jobs:
         distribution: "temurin"
         java-version: "11"
     
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake
+        sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+    
+    - name: Cache buildozer global directory
+      uses: actions/cache@v3
+      with:
+        path: ~/.buildozer
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-
+    
+    - name: Cache buildozer directory
+      uses: actions/cache@v3
+      with:
+        path: .buildozer
+        key: ${{ runner.os }}-buildozer-local-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-local-
     
     - name: Install Python dependencies
       run: |
-        pip install buildozer==1.4.0
+        pip install --upgrade pip
+        pip install buildozer==1.5.0
         pip install cython==0.29.33
     
-    - name: Build APK
-      run: buildozer android debug
+    - name: Make buildozer executable
+      run: chmod +x $(which buildozer) || true
+    
+    - name: Build APK with buildozer
+      run: |
+        yes | buildozer android debug
+      env:
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
+    
+    - name: List build artifacts
+      run: |
+        echo "Listing bin directory:"
+        ls -lah bin/ || echo "No bin directory found"
+        echo "Finding APK files:"
+        find . -name "*.apk" -type f
     
     - name: Upload APK
       uses: actions/upload-artifact@v3
       with:
         name: MyReminders-v2.5
+        path: bin/*.apk
+        if-no-files-found: error
+    
+    - name: Upload APK as release asset (optional)
+      uses: actions/upload-artifact@v3
+      if: success()
+      with:
+        name: MyReminders-Debug-APK
         path: bin/*.apk
