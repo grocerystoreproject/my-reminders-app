@@ -7,7 +7,7 @@ source.include_exts = py,png,jpg,kv,atlas,json
 source.include_patterns = service/*
 version = 2.5
 
-requirements = python3,kivy,android,pyjnius
+requirements = python3==3.9.19,kivy==2.3.0,android,pyjnius
 
 orientation = portrait
 fullscreen = 0
@@ -28,6 +28,8 @@ android.enable_androidx = True
 android.gradle_dependencies = com.google.android.material:material:1.9.0
 
 android.archs = arm64-v8a
+
+android.add_gradle_repositories = google(), mavenCentral()
 
 p4a.branch = master
 p4a.bootstrap = sdl2
