@@ -20,11 +20,11 @@ jobs:
       with:
         python-version: "3.9"
     
-    - name: Set up Java
+    - name: Set up Java 17 (for Android SDK)
       uses: actions/setup-java@v4
       with:
         distribution: "temurin"
-        java-version: "11"
+        java-version: "17"
     
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
@@ -72,16 +72,33 @@ jobs:
         GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
         P4A_DEBUG: '1'
     
-    - name: Fix missing gradlew
+    - name: Install Java 11 and fix gradlew
       if: always()
       run: |
+        # Install Java 11 for Gradle
+        sudo apt-get install -y openjdk-11-jdk
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+        export PATH=$JAVA_HOME/bin:$PATH
+        
+        echo "Java version:"
+        java -version
+        
         echo "Checking for gradlew..."
         
         # Find the dist directory
-        DIST_DIR=$(find .buildozer/android/platform/build-arm64-v8a/dists -name "myreminders" -type d | head -1)
+        DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
         
         if [ -z "$DIST_DIR" ]; then
-          echo "Distribution directory not found"
+          echo "Distribution directory not found, checking build structure..."
+          find .buildozer/android/platform -type d -name "dists" 2>/dev/null || true
+          find .buildozer/android/platform -type d -name "myreminders" 2>/dev/null || true
+          echo "Retrying buildozer with clean state..."
+          buildozer android debug
+          DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
+        fi
+        
+        if [ -z "$DIST_DIR" ]; then
+          echo "Still no distribution directory found"
           exit 1
         fi
         
@@ -104,13 +121,12 @@ jobs:
         fi
         
         # Now build
-        echo "Building APK..."
+        echo "Building APK with Java 11..."
         ./gradlew clean assembleDebug --stacktrace
         
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/11.0.26-10/x64
     
     - name: List build artifacts
       if: always()
