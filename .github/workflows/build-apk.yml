@@ -20,7 +20,7 @@ jobs:
       with:
         python-version: "3.9"
     
-    - name: Set up Java 17 (for Android SDK)
+    - name: Set up Java 17
       uses: actions/setup-java@v4
       with:
         distribution: "temurin"
@@ -72,14 +72,9 @@ jobs:
         GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
         P4A_DEBUG: '1'
     
-    - name: Install Java 11 and fix gradlew
+    - name: Fix gradlew with Gradle 8.0 (Java 17 compatible)
       if: always()
       run: |
-        # Install Java 11 for Gradle
-        sudo apt-get install -y openjdk-11-jdk
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-        export PATH=$JAVA_HOME/bin:$PATH
-        
         echo "Java version:"
         java -version
         
@@ -89,10 +84,7 @@ jobs:
         DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
         
         if [ -z "$DIST_DIR" ]; then
-          echo "Distribution directory not found, checking build structure..."
-          find .buildozer/android/platform -type d -name "dists" 2>/dev/null || true
-          find .buildozer/android/platform -type d -name "myreminders" 2>/dev/null || true
-          echo "Retrying buildozer with clean state..."
+          echo "Distribution directory not found, retrying buildozer..."
           buildozer android debug
           DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
         fi
@@ -105,28 +97,31 @@ jobs:
         echo "Found dist directory: $DIST_DIR"
         cd "$DIST_DIR"
         
-        # Check if gradlew exists
-        if [ ! -f "gradlew" ]; then
-          echo "gradlew missing, installing Gradle wrapper..."
-          
-          # Download and install Gradle 7.6 (compatible with Java 11)
-          wget -q https://services.gradle.org/distributions/gradle-7.6.4-bin.zip
-          unzip -q gradle-7.6.4-bin.zip
-          
-          # Initialize gradle wrapper
-          ./gradle-7.6.4/bin/gradle wrapper --gradle-version 7.6.4
-          
-          chmod +x gradlew
-          echo "Gradle wrapper installed"
-        fi
+        # Remove old gradle wrapper if exists
+        rm -rf gradle gradlew gradlew.bat .gradle 2>/dev/null || true
         
-        # Now build
-        echo "Building APK with Java 11..."
+        # Download and install Gradle 8.0.2 (compatible with Java 17)
+        echo "Installing Gradle 8.0.2 wrapper..."
+        wget -q https://services.gradle.org/distributions/gradle-8.0.2-bin.zip
+        unzip -q gradle-8.0.2-bin.zip
+        
+        # Initialize gradle wrapper with version 8.0.2
+        ./gradle-8.0.2/bin/gradle wrapper --gradle-version 8.0.2
+        
+        chmod +x gradlew
+        echo "Gradle 8.0.2 wrapper installed"
+        
+        # Verify gradle version
+        ./gradlew --version
+        
+        # Now build with Java 17
+        echo "Building APK with Gradle 8.0.2 and Java 17..."
         ./gradlew clean assembleDebug --stacktrace
         
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.16-8/x64
     
     - name: List build artifacts
       if: always()
