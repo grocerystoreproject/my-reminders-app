@@ -24,7 +24,7 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: "temurin"
-        java-version: "17"
+        java-version: "11"
     
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
@@ -61,31 +61,8 @@ jobs:
     
     - name: Build APK with buildozer
       run: |
-        buildozer -v android debug 2>&1 | tee build.log || true
-        
-        # Check if gradlew failed
-        if grep -q "gradlew failed" build.log; then
-          echo "Gradlew failed, attempting manual fix..."
-          
-          # Find and fix gradlew
-          GRADLEW_PATH=$(find .buildozer -name "gradlew" -type f | head -1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            echo "Found gradlew at: $GRADLEW_PATH"
-            chmod +x "$GRADLEW_PATH"
-            
-            # Check what's wrong with gradlew
-            cd $(dirname "$GRADLEW_PATH")
-            echo "Testing gradlew directly..."
-            ./gradlew --version || echo "Gradlew version check failed"
-            ./gradlew tasks || echo "Gradlew tasks failed"
-            
-            # Try running the actual command
-            ./gradlew clean assembleDebug --stacktrace --info
-          fi
-        else
-          echo "Build succeeded!"
-          exit 0
-        fi
+        buildozer -v android debug 2>&1 | tee build.log
+      continue-on-error: true
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -95,48 +72,62 @@ jobs:
         GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
         P4A_DEBUG: '1'
     
-    - name: Fix Gradle wrapper and retry on failure
-      if: failure()
+    - name: Fix missing gradlew
+      if: always()
       run: |
-        echo "Build failed, checking logs..."
-        cat build.log | tail -100
+        echo "Checking for gradlew..."
         
-        echo "Attempting complete rebuild with Ant fallback..."
+        # Find the dist directory
+        DIST_DIR=$(find .buildozer/android/platform/build-arm64-v8a/dists -name "myreminders" -type d | head -1)
         
-        # Remove gradle completely and use ant
-        rm -rf .buildozer/android/platform/build-*/dists/myreminders/gradle* || true
-        
-        # Modify buildozer.spec to use ant temporarily
-        if [ -f buildozer.spec.bak ]; then
-          cp buildozer.spec.bak buildozer.spec
-        else
-          cp buildozer.spec buildozer.spec.bak
+        if [ -z "$DIST_DIR" ]; then
+          echo "Distribution directory not found"
+          exit 1
         fi
         
-        # Try with ant
-        buildozer android debug --build-tool ant
+        echo "Found dist directory: $DIST_DIR"
+        cd "$DIST_DIR"
+        
+        # Check if gradlew exists
+        if [ ! -f "gradlew" ]; then
+          echo "gradlew missing, installing Gradle wrapper..."
+          
+          # Download and install Gradle 7.6 (compatible with Java 11)
+          wget -q https://services.gradle.org/distributions/gradle-7.6.4-bin.zip
+          unzip -q gradle-7.6.4-bin.zip
+          
+          # Initialize gradle wrapper
+          ./gradle-7.6.4/bin/gradle wrapper --gradle-version 7.6.4
+          
+          chmod +x gradlew
+          echo "Gradle wrapper installed"
+        fi
+        
+        # Now build
+        echo "Building APK..."
+        ./gradlew clean assembleDebug --stacktrace
+        
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
-        USE_PREBUILT_LIBS: '1'
-        USE_CCACHE: '1'
-        P4A_DEBUG: '1'
+        JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/11.0.26-10/x64
     
     - name: List build artifacts
       if: always()
       run: |
-        echo "=== Build logs ==="
-        find .buildozer -name "*.log" -type f -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true
-        
-        echo "=== Gradle logs ==="
-        find .buildozer -path "*/.gradle/*/daemon/*.log" -type f -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true
-        
         echo "=== APK search ==="
         echo "Listing bin directory:"
-        ls -lah bin/ || echo "No bin directory found"
-        echo "Finding APK files:"
-        find . -name "*.apk" -type f
+        ls -lah bin/ 2>/dev/null || echo "No bin directory found"
+        
+        echo "Finding APK files in .buildozer:"
+        find .buildozer -name "*.apk" -type f 2>/dev/null || echo "No APK in .buildozer"
+        
+        echo "Copying APK to bin directory:"
+        mkdir -p bin
+        find .buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
+        
+        echo "Final bin directory:"
+        ls -lah bin/ 2>/dev/null || echo "Still no bin directory"
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
