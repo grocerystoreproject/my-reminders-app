@@ -128,23 +128,21 @@ def schedule_alarm_with_manager(reminder_id, hour, minute, days, reminder_data):
             
             if next_alarm_time:
                 # Create intent for service
-                service_class = autoclass('org.kivy.android.PythonService')
-                intent = Intent(context, service_class)
-                intent.setAction(f"ALARM_{reminder_id}")
+                # Create intent for BroadcastReceiver
+                intent = Intent()
+                intent.setAction("com.reminder.ALARM_TRIGGER")
+                intent.setPackage(context.getPackageName())
                 intent.putExtra("reminder_id", reminder_id)
                 intent.putExtra("reminder_text", reminder_data.get('text', ''))
                 intent.putExtra("reminder_category", reminder_data.get('category', 'Personal'))
                 intent.putExtra("reminder_note", reminder_data.get('note', ''))
-                intent.putExtra("alarm_hour", hour)
-                intent.putExtra("alarm_minute", minute)
-                intent.putExtra("alarm_days", ','.join(map(str, days)))
-                
-                pending_intent = PendingIntent.getService(
-                    context,
-                    reminder_id,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-                )
+
+                pending_intent = PendingIntent.getBroadcast(
+                        context,
+                        reminder_id,
+                        intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                    )
                 
                 # Schedule exact alarm
                 alarm_manager.setExactAndAllowWhileIdle(
@@ -178,16 +176,17 @@ def cancel_alarm_with_manager(reminder_id, days):
             alarm_manager = context.getSystemService(Context.ALARM_SERVICE)
             
             # Cancel the pending intent
-            service_class = autoclass('org.kivy.android.PythonService')
-            intent = Intent(context, service_class)
-            intent.setAction(f"ALARM_{reminder_id}")
-            
-            pending_intent = PendingIntent.getService(
-                context,
-                reminder_id,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-            )
+            # Cancel the pending intent
+            intent = Intent()
+            intent.setAction("com.reminder.ALARM_TRIGGER")
+            intent.setPackage(context.getPackageName())
+
+            pending_intent = PendingIntent.getBroadcast(
+                    context,
+                    reminder_id,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                )
             
             alarm_manager.cancel(pending_intent)
             pending_intent.cancel()
