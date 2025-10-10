@@ -23,39 +23,55 @@ print("Enhanced Reminder App starting...")
 
 Window.clearcolor = (0.95, 0.96, 0.98, 1)
 
-if platform == 'android':
-    print("Requesting Android permissions...")
-    try:
-        from android.permissions import request_permissions, Permission, check_permission
-        from jnius import autoclass
-        
-        permissions = [
-            Permission.VIBRATE,
-            Permission.WAKE_LOCK,
-            Permission.SCHEDULE_EXACT_ALARM,
-            Permission.POST_NOTIFICATIONS,
-            Permission.USE_EXACT_ALARM,
-            Permission.FOREGROUND_SERVICE,
-            Permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK,
-            Permission.READ_EXTERNAL_STORAGE,
-            Permission.WRITE_EXTERNAL_STORAGE,
-            Permission.READ_MEDIA_AUDIO,
-        ]
-        
-        request_permissions(permissions)
-        print("Permissions requested")
-        
-        def request_special_permissions():
-            try:
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Intent = autoclass('android.content.Intent')
-                Settings = autoclass('android.provider.Settings')
-                Uri = autoclass('android.net.Uri')
-                Build = autoclass('android.os.Build')
-                
-                activity = PythonActivity.mActivity
-                
-                if Build.VERSION.SDK_INT >= 31:
+# Global variable to track if permissions were requested
+permissions_requested = False
+
+
+def request_android_permissions():
+    """Request Android permissions after app initialization"""
+    global permissions_requested
+    if permissions_requested:
+        return
+    
+    permissions_requested = True
+    
+    if platform == 'android':
+        print("Requesting Android permissions...")
+        try:
+            from android.permissions import request_permissions, Permission
+            
+            permissions = [
+                Permission.VIBRATE,
+                Permission.WAKE_LOCK,
+                Permission.POST_NOTIFICATIONS,
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE,
+            ]
+            
+            request_permissions(permissions)
+            print("Basic permissions requested")
+            
+        except Exception as e:
+            print(f"Permission error: {e}")
+
+
+def request_special_permissions():
+    """Request special permissions that need user interaction"""
+    if platform == 'android':
+        try:
+            from jnius import autoclass
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Settings = autoclass('android.provider.Settings')
+            Uri = autoclass('android.net.Uri')
+            Build = autoclass('android.os.Build')
+            
+            activity = PythonActivity.mActivity
+            
+            # Request exact alarm permission (Android 12+)
+            if Build.VERSION.SDK_INT >= 31:
+                try:
                     AlarmManager = autoclass('android.app.AlarmManager')
                     Context = autoclass('android.content.Context')
                     alarm_manager = activity.getSystemService(Context.ALARM_SERVICE)
@@ -64,7 +80,11 @@ if platform == 'android':
                         print("Requesting exact alarm permission...")
                         intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
                         activity.startActivity(intent)
-                
+                except Exception as e:
+                    print(f"Exact alarm permission error: {e}")
+            
+            # Request battery optimization exemption
+            try:
                 PowerManager = autoclass('android.os.PowerManager')
                 Context = autoclass('android.content.Context')
                 power_manager = activity.getSystemService(Context.POWER_SERVICE)
@@ -75,126 +95,11 @@ if platform == 'android':
                     intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                     intent.setData(Uri.parse(f"package:{package_name}"))
                     activity.startActivity(intent)
-                    
             except Exception as e:
-                print(f"Special permission error: {e}")
-        
-        Clock.schedule_once(lambda dt: request_special_permissions(), 2)
-        
-    except Exception as e:
-        print(f"Permission error: {e}")
-
-
-def schedule_alarm_with_manager(reminder_id, hour, minute, days, reminder_data):
-    """Schedule alarm using AlarmManager"""
-    if platform == 'android':
-        try:
-            from jnius import autoclass
-            
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            PendingIntent = autoclass('android.app.PendingIntent')
-            AlarmManager = autoclass('android.app.AlarmManager')
-            Context = autoclass('android.content.Context')
-            Calendar = autoclass('java.util.Calendar')
-            
-            activity = PythonActivity.mActivity
-            context = activity.getApplicationContext()
-            alarm_manager = context.getSystemService(Context.ALARM_SERVICE)
-            
-            # Find next occurrence
-            now = Calendar.getInstance()
-            current_time = now.getTimeInMillis()
-            
-            next_alarm_time = None
-            
-            for day in days:
-                calendar = Calendar.getInstance()
-                calendar.set(Calendar.HOUR_OF_DAY, hour)
-                calendar.set(Calendar.MINUTE, minute)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.set(Calendar.MILLISECOND, 0)
-                
-                # Convert Python day (0=Monday) to Java day (1=Sunday, 2=Monday, etc.)
-                java_day = ((day + 1) % 7) + 1
-                calendar.set(Calendar.DAY_OF_WEEK, java_day)
-                
-                # If the time has passed today, schedule for next week
-                if calendar.getTimeInMillis() <= current_time:
-                    calendar.add(Calendar.WEEK_OF_YEAR, 1)
-                
-                if next_alarm_time is None or calendar.getTimeInMillis() < next_alarm_time:
-                    next_alarm_time = calendar.getTimeInMillis()
-            
-            if next_alarm_time:
-                # Create intent for service
-                # Create intent for BroadcastReceiver
-                intent = Intent()
-                intent.setAction("com.reminder.ALARM_TRIGGER")
-                intent.setPackage(context.getPackageName())
-                intent.putExtra("reminder_id", reminder_id)
-                intent.putExtra("reminder_text", reminder_data.get('text', ''))
-                intent.putExtra("reminder_category", reminder_data.get('category', 'Personal'))
-                intent.putExtra("reminder_note", reminder_data.get('note', ''))
-
-                pending_intent = PendingIntent.getBroadcast(
-                        context,
-                        reminder_id,
-                        intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-                    )
-                
-                # Schedule exact alarm
-                alarm_manager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    next_alarm_time,
-                    pending_intent
-                )
-                
-                print(f"✅ AlarmManager: Scheduled reminder {reminder_id} at {hour}:{minute:02d} for days {days}")
+                print(f"Battery optimization error: {e}")
                 
         except Exception as e:
-            print(f"❌ AlarmManager schedule error: {e}")
-            import traceback
-            traceback.print_exc()
-
-
-def cancel_alarm_with_manager(reminder_id, days):
-    """Cancel alarm using AlarmManager"""
-    if platform == 'android':
-        try:
-            from jnius import autoclass
-            
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            PendingIntent = autoclass('android.app.PendingIntent')
-            AlarmManager = autoclass('android.app.AlarmManager')
-            Context = autoclass('android.content.Context')
-            
-            activity = PythonActivity.mActivity
-            context = activity.getApplicationContext()
-            alarm_manager = context.getSystemService(Context.ALARM_SERVICE)
-            
-            # Cancel the pending intent
-            # Cancel the pending intent
-            intent = Intent()
-            intent.setAction("com.reminder.ALARM_TRIGGER")
-            intent.setPackage(context.getPackageName())
-
-            pending_intent = PendingIntent.getBroadcast(
-                    context,
-                    reminder_id,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-                )
-            
-            alarm_manager.cancel(pending_intent)
-            pending_intent.cancel()
-            
-            print(f"✅ AlarmManager: Cancelled reminder {reminder_id}")
-            
-        except Exception as e:
-            print(f"❌ AlarmManager cancel error: {e}")
+            print(f"Special permission error: {e}")
 
 
 def create_notification_channel():
@@ -213,7 +118,6 @@ def create_notification_channel():
             activity = PythonActivity.mActivity
             notification_service = activity.getSystemService(Context.NOTIFICATION_SERVICE)
             
-            # Only create channel on Android 8.0+
             if Build.VERSION.SDK_INT >= 26:
                 channel_id = "reminder_channel"
                 channel_name = "Reminder Notifications"
@@ -224,7 +128,6 @@ def create_notification_channel():
                 channel.enableVibration(True)
                 channel.setVibrationPattern([0, 500, 200, 500])
                 channel.setLockscreenVisibility(1)
-                channel.setBypassDnd(True)
                 
                 default_sound_uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 audio_attributes = AudioAttributes.Builder() \
@@ -234,11 +137,9 @@ def create_notification_channel():
                 channel.setSound(default_sound_uri, audio_attributes)
                 
                 notification_service.createNotificationChannel(channel)
-                print("✅ Notification channel created with alarm sound")
+                print("✅ Notification channel created")
         except Exception as e:
             print(f"❌ Channel creation error: {e}")
-            import traceback
-            traceback.print_exc()
 
 
 def start_background_service():
@@ -267,8 +168,6 @@ def start_background_service():
             print("✅ Background service started")
         except Exception as e:
             print(f"❌ Service start error: {e}")
-            import traceback
-            traceback.print_exc()
 
 
 class ModernCard(BoxLayout):
@@ -496,9 +395,6 @@ class ReminderApp(App):
             print(f"Data dir error: {e}")
             self.data_file = 'reminders.json'
         
-        create_notification_channel()
-        Clock.schedule_once(lambda dt: start_background_service(), 3)
-        
         self.load_ringtones()
         self.load_reminders()
 
@@ -678,6 +574,12 @@ class ReminderApp(App):
         
         self.refresh_reminder_list()
         Clock.schedule_interval(self.check_reminders, 5)
+        
+        # Request permissions AFTER UI is built
+        Clock.schedule_once(lambda dt: request_android_permissions(), 2)
+        Clock.schedule_once(lambda dt: create_notification_channel(), 2.5)
+        Clock.schedule_once(lambda dt: request_special_permissions(), 3)
+        Clock.schedule_once(lambda dt: start_background_service(), 3.5)
         
         print("Enhanced UI built successfully")
         return root
@@ -896,23 +798,6 @@ The app will request these permissions automatically."""
             with open(self.data_file, 'w') as f:
                 json.dump(data, f, indent=2)
             print(f"Saved {len(data)} reminders")
-            
-            # IMPORTANT: Schedule all enabled reminders with AlarmManager
-            for idx, r in enumerate(self.reminders):
-                if r.get('enabled'):
-                    schedule_alarm_with_manager(
-                        idx,
-                        r['time'].hour,
-                        r['time'].minute,
-                        r.get('days', list(range(7))),
-                        {
-                            'text': r['text'],
-                            'category': r.get('category', 'Personal'),
-                            'note': r.get('note', '')
-                        }
-                    )
-                else:
-                    cancel_alarm_with_manager(idx, r.get('days', list(range(7))))
                     
         except Exception as e:
             print(f"Save error: {e}")
@@ -1393,9 +1278,6 @@ The app will request these permissions automatically."""
                 reminder_key = f"{index}_{reminder['time'].hour:02d}{reminder['time'].minute:02d}"
                 self.triggered_reminders.discard(reminder_key)
                 
-                # Cancel alarm with AlarmManager
-                cancel_alarm_with_manager(index, reminder.get('days', list(range(7))))
-                
                 del self.reminders[index]
                 self.save_reminders()
                 self.refresh_reminder_list()
@@ -1515,7 +1397,6 @@ The app will request these permissions automatically."""
                 Uri = autoclass('android.net.Uri')
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 RingtoneManager = autoclass('android.media.RingtoneManager')
-                Context = autoclass('android.content.Context')
                 
                 activity = PythonActivity.mActivity
                 
@@ -1549,8 +1430,6 @@ The app will request these permissions automatically."""
                 
         except Exception as e:
             print(f"Ringtone error: {e}")
-            import traceback
-            traceback.print_exc()
 
     def stop_ringtone(self):
         """Stop playing ringtone"""
@@ -1583,7 +1462,10 @@ The app will request these permissions automatically."""
                 
                 intent = Intent(activity.getApplicationContext(), PythonActivity)
                 intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                pending_intent = PendingIntent.getActivity(activity, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)
+                pending_intent = PendingIntent.getActivity(
+                    activity, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                )
                 
                 builder = NotificationCompat.Builder(activity, "reminder_channel")
                 builder.setContentTitle(f"⏰ {reminder.get('category', 'Reminder')}")
@@ -1609,8 +1491,6 @@ The app will request these permissions automatically."""
                 
             except Exception as e:
                 print(f"Notification error: {e}")
-                import traceback
-                traceback.print_exc()
 
     def check_reminders(self, dt):
         """Check reminders with improved accuracy"""
@@ -1659,8 +1539,6 @@ The app will request these permissions automatically."""
                 
         except Exception as e:
             print(f"Check reminders error: {e}")
-            import traceback
-            traceback.print_exc()
 
     def snooze_alarm(self, reminder, idx):
         """Snooze the alarm"""
@@ -1840,12 +1718,10 @@ The app will request these permissions automatically."""
             
         except Exception as e:
             print(f"Show alarm error: {e}")
-            import traceback
-            traceback.print_exc()
 
     def on_pause(self):
-        """Handle app going to background - AlarmManager continues working"""
-        print("App pausing - AlarmManager will trigger alarms")
+        """Handle app going to background"""
+        print("App pausing - service continues in background")
         return True
 
     def on_resume(self):
@@ -1855,14 +1731,14 @@ The app will request these permissions automatically."""
         self.last_check_minute = -1
 
     def on_stop(self):
-        """Handle app stopping - AlarmManager keeps alarms active"""
-        print("App stopping - AlarmManager alarms remain scheduled")
+        """Handle app stopping"""
+        print("App stopping")
         self.save_reminders()
         self.stop_ringtone()
 
 
 if __name__ == "__main__":
-    print("Starting Enhanced ReminderApp with AlarmManager...")
+    print("Starting Enhanced ReminderApp...")
     try:
         ReminderApp().run()
     except Exception as e:
