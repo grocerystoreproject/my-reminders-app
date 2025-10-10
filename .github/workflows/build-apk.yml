@@ -66,7 +66,7 @@ jobs:
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.3.13750724
+        ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.1.8937393
         USE_PREBUILT_LIBS: '1'
         USE_CCACHE: '1'
         GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
@@ -123,22 +123,28 @@ jobs:
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.16-8/x64
     
-    - name: List build artifacts
+    - name: List and copy build artifacts
       if: always()
       run: |
         echo "=== APK search ==="
-        echo "Listing bin directory:"
-        ls -lah bin/ 2>/dev/null || echo "No bin directory found"
+        echo "Finding all APK files:"
+        find .buildozer -name "*.apk" -type f 2>/dev/null || echo "No APKs found"
         
-        echo "Finding APK files in .buildozer:"
-        find .buildozer -name "*.apk" -type f 2>/dev/null || echo "No APK in .buildozer"
-        
-        echo "Copying APK to bin directory:"
+        echo "Creating bin directory and copying APKs:"
         mkdir -p bin
+        
+        # Copy all APKs to bin directory
         find .buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
         
-        echo "Final bin directory:"
-        ls -lah bin/ 2>/dev/null || echo "Still no bin directory"
+        # Rename to single APK if multiple exist
+        if [ -f "bin/myreminders-0.1-arm64-v8a-debug.apk" ]; then
+          cp bin/myreminders-0.1-arm64-v8a-debug.apk bin/MyReminders-v2.5.apk
+        elif [ -f "bin/myreminders-0.1-armeabi-v7a-debug.apk" ]; then
+          cp bin/myreminders-0.1-armeabi-v7a-debug.apk bin/MyReminders-v2.5.apk
+        fi
+        
+        echo "Final bin directory contents:"
+        ls -lah bin/ 2>/dev/null || echo "No bin directory"
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -146,10 +152,3 @@ jobs:
         name: MyReminders-v2.5
         path: bin/*.apk
         if-no-files-found: error
-    
-    - name: Upload APK as release asset
-      uses: actions/upload-artifact@v4
-      if: success()
-      with:
-        name: MyReminders-Debug-APK
-        path: bin/*.apk
