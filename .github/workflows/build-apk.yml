@@ -20,11 +20,11 @@ jobs:
       with:
         python-version: "3.9"
     
-    - name: Set up Java 17
+    - name: Set up Java 11
       uses: actions/setup-java@v4
       with:
         distribution: "temurin"
-        java-version: "17"
+        java-version: "11"
     
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
@@ -32,146 +32,33 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git zip unzip libssl-dev libffi-dev python3-dev autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev cmake libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libtool-bin libltdl-dev ccache
-        sudo apt-get install -y libunwind-dev
-        sudo apt-get install -y libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
-        sudo apt-get install -y libgles2-mesa-dev libglew-dev
-        sudo apt-get install -y cython3
+        sudo apt-get install -y build-essential git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev ccache
     
     - name: Install Python dependencies
       run: |
-        pip install --upgrade pip
-        pip install --upgrade setuptools==58.0.0 wheel
-        pip install buildozer==1.5.0
-        pip install cython==0.29.33
-        pip install virtualenv
-        pip install sh
-    
-    - name: Make buildozer executable
-      run: chmod +x $(which buildozer) || true
+        pip install --upgrade pip setuptools wheel
+        pip install buildozer==1.5.0 cython==0.29.33
     
     - name: Accept Android SDK licenses
-      run: |
-        yes | sdkmanager --licenses || true
+      run: yes | sdkmanager --licenses || true
     
-    - name: Clean all buildozer directories
-      run: |
-        rm -rf .buildozer/android/platform/build-* || true
-        rm -rf ~/.buildozer || true
+    - name: Clean cache
+      run: rm -rf .buildozer || true
     
-    - name: Build APK with buildozer
-      run: |
-        buildozer -v android debug 2>&1 | tee build.log
-      continue-on-error: true
+    - name: Build APK
+      run: buildozer -v android debug
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.1.8937393
-        USE_PREBUILT_LIBS: '1'
-        USE_CCACHE: '1'
-        GRADLE_OPTS: '-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m'
-        P4A_DEBUG: '1'
     
-    - name: Fix gradlew with Gradle 8.0 (Java 17 compatible)
-      if: always()
+    - name: Find and copy APK
       run: |
-        echo "Java version:"
-        java -version
-        
-        echo "Checking for gradlew..."
-        
-        # Find the dist directory
-        DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
-        
-        if [ -z "$DIST_DIR" ]; then
-          echo "Distribution directory not found, retrying buildozer..."
-          buildozer android debug
-          DIST_DIR=$(find .buildozer/android/platform/build-* -name "myreminders" -type d 2>/dev/null | grep dists | head -1)
-        fi
-        
-        if [ -z "$DIST_DIR" ]; then
-          echo "Still no distribution directory found"
-          exit 1
-        fi
-        
-        echo "Found dist directory: $DIST_DIR"
-        cd "$DIST_DIR"
-        
-        # FIX KOTLIN DEPENDENCY CONFLICTS - Add to build.gradle
-        echo "Fixing Kotlin dependency conflicts..."
-        if [ -f "build.gradle" ]; then
-          cat >> build.gradle << 'EOFGRADLE'
-        
-        // Fix Kotlin stdlib conflicts
-        configurations.all {
-            resolutionStrategy {
-                force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.10'
-                force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.10'
-                force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.10'
-            }
-        }
-        
-        // Exclude duplicate Kotlin stdlib-jdk7 and stdlib-jdk8
-        configurations.all {
-            exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-            exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
-        }
-        EOFGRADLE
-          echo "Kotlin dependency fix applied to build.gradle"
-        fi
-        
-        # Remove old gradle wrapper if exists
-        rm -rf gradle gradlew gradlew.bat .gradle 2>/dev/null || true
-        
-        # Download and install Gradle 8.0.2 (compatible with Java 17)
-        echo "Installing Gradle 8.0.2 wrapper..."
-        wget -q https://services.gradle.org/distributions/gradle-8.0.2-bin.zip
-        unzip -q gradle-8.0.2-bin.zip
-        
-        # Initialize gradle wrapper with version 8.0.2
-        ./gradle-8.0.2/bin/gradle wrapper --gradle-version 8.0.2
-        
-        chmod +x gradlew
-        echo "Gradle 8.0.2 wrapper installed"
-        
-        # Verify gradle version
-        ./gradlew --version
-        
-        # Now build with Java 17
-        echo "Building APK with Gradle 8.0.2 and Java 17..."
-        ./gradlew clean assembleDebug --stacktrace
-        
-      env:
-        ANDROID_HOME: /usr/local/lib/android/sdk
-        ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.16-8/x64
-    
-    - name: List and copy build artifacts
-      if: always()
-      run: |
-        echo "=== APK search ==="
-        echo "Finding all APK files:"
-        find .buildozer -name "*.apk" -type f 2>/dev/null || echo "No APKs found"
-        
-        echo "Creating bin directory and copying APKs:"
         mkdir -p bin
-        
-        # Copy all APKs to bin directory
-        find .buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
-        
-        # Rename to single APK if multiple exist
-        if [ -f "bin/myreminders-0.1-arm64-v8a-debug.apk" ]; then
-          cp bin/myreminders-0.1-arm64-v8a-debug.apk bin/MyReminders-v2.5.apk
-        elif [ -f "bin/myreminders-0.1-armeabi-v7a-debug.apk" ]; then
-          cp bin/myreminders-0.1-armeabi-v7a-debug.apk bin/MyReminders-v2.5.apk
-        fi
-        
-        echo "Final bin directory contents:"
-        ls -lah bin/ 2>/dev/null || echo "No bin directory"
+        find .buildozer -name "*.apk" -exec cp {} bin/MyReminders.apk \;
+        ls -lh bin/
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: MyReminders-v2.5
+        name: MyReminders-App
         path: bin/*.apk
-        if-no-files-found: error
