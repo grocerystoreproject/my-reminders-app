@@ -29,10 +29,10 @@ android.archs = arm64-v8a
 
 android.add_gradle_repositories = google(), mavenCentral()
 
-# Add Java source directory
+# Add Java source directory for BroadcastReceivers
 android.add_src = java
 
-# Register BroadcastReceivers in manifest for alarm handling
+# Register BroadcastReceivers in AndroidManifest.xml
 android.manifest.application = """
     <receiver
         android:name="com.reminder.myreminders.AlarmBroadcastReceiver"
