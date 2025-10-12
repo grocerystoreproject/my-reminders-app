@@ -18,6 +18,7 @@ from kivy.utils import platform
 from kivy.graphics import Color, RoundedRectangle
 from kivy.metrics import dp
 from kivy.core.window import Window
+from alarm_manager import schedule_exact_alarm, cancel_alarm, reschedule_all_alarms
 
 print("Enhanced Reminder App starting...")
 
@@ -140,34 +141,6 @@ def create_notification_channel():
                 print("✅ Notification channel created")
         except Exception as e:
             print(f"❌ Channel creation error: {e}")
-
-
-def start_background_service():
-    """Start the background service for reminders"""
-    if platform == 'android':
-        try:
-            from jnius import autoclass
-            PythonService = autoclass('org.kivy.android.PythonService')
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            Build = autoclass('android.os.Build')
-            Context = autoclass('android.content.Context')
-            
-            activity = PythonActivity.mActivity
-            context = activity.getApplicationContext()
-            
-            service_intent = Intent(context, PythonService)
-            service_intent.putExtra("serviceTitle", "My Reminders")
-            service_intent.putExtra("serviceDescription", "Monitoring reminders")
-            
-            if Build.VERSION.SDK_INT >= 26:
-                context.startForegroundService(service_intent)
-            else:
-                context.startService(service_intent)
-            
-            print("✅ Background service started")
-        except Exception as e:
-            print(f"❌ Service start error: {e}")
 
 
 class ModernCard(BoxLayout):
@@ -397,6 +370,19 @@ class ReminderApp(App):
         
         self.load_ringtones()
         self.load_reminders()
+        
+        # Check if launched after boot to reschedule alarms
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                activity = PythonActivity.mActivity
+                intent = activity.getIntent()
+                if intent and intent.getBooleanExtra("reschedule_alarms", False):
+                    print("🔄 Rescheduling alarms after boot...")
+                    Clock.schedule_once(lambda dt: reschedule_all_alarms(self.reminders), 3)
+            except Exception as e:
+                print(f"Boot check error: {e}")
 
         root = FloatLayout()
         self.layout = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(12))
@@ -579,7 +565,6 @@ class ReminderApp(App):
         Clock.schedule_once(lambda dt: request_android_permissions(), 2)
         Clock.schedule_once(lambda dt: create_notification_channel(), 2.5)
         Clock.schedule_once(lambda dt: request_special_permissions(), 3)
-        Clock.schedule_once(lambda dt: start_background_service(), 3.5)
         
         print("Enhanced UI built successfully")
         return root
@@ -651,7 +636,7 @@ The app will request these permissions automatically."""
             content.add_widget(perm_btn)
         
         restart_btn = Button(
-            text="🔄 Restart Service",
+            text="🔄 Reschedule All Alarms",
             size_hint_y=None,
             height=dp(50),
             background_normal='',
@@ -661,11 +646,12 @@ The app will request these permissions automatically."""
             bold=True
         )
         
-        def restart_service(btn):
-            start_background_service()
+        def restart_alarms(btn):
+            if platform == 'android':
+                reschedule_all_alarms(self.reminders)
             popup.dismiss()
         
-        restart_btn.bind(on_press=restart_service)
+        restart_btn.bind(on_press=restart_alarms)
         content.add_widget(restart_btn)
         
         close_btn = Button(
@@ -1172,9 +1158,11 @@ The app will request these permissions automatically."""
 
             if self.editing_index is not None:
                 self.reminders[self.editing_index] = new_reminder
+                reminder_idx = self.editing_index
                 self.editing_index = None
             else:
                 self.reminders.append(new_reminder)
+                reminder_idx = len(self.reminders) - 1
             
             if self.current_sort == 'Time':
                 self.reminders.sort(key=lambda x: (x['time'].hour, x['time'].minute))
@@ -1182,8 +1170,18 @@ The app will request these permissions automatically."""
             self.save_reminders()
             self.refresh_reminder_list()
             
+            # Schedule alarm with AlarmManager
             if platform == 'android':
-                Clock.schedule_once(lambda dt: start_background_service(), 0.5)
+                schedule_exact_alarm(
+                    reminder_idx,
+                    new_reminder['time'].hour,
+                    new_reminder['time'].minute,
+                    new_reminder['days'],
+                    new_reminder['text'],
+                    new_reminder['category'],
+                    new_reminder.get('note', ''),
+                    new_reminder.get('priority', 'Medium')
+                )
             
             popup.dismiss()
 
@@ -1205,11 +1203,24 @@ The app will request these permissions automatically."""
             reminder_key = f"{index}_{reminder['time'].hour:02d}{reminder['time'].minute:02d}"
             self.triggered_reminders.discard(reminder_key)
             
+            # Schedule or cancel alarm based on enabled state
+            if platform == 'android':
+                if reminder['enabled']:
+                    schedule_exact_alarm(
+                        index,
+                        reminder['time'].hour,
+                        reminder['time'].minute,
+                        reminder.get('days', list(range(7))),
+                        reminder['text'],
+                        reminder.get('category', 'Personal'),
+                        reminder.get('note', ''),
+                        reminder.get('priority', 'Medium')
+                    )
+                else:
+                    cancel_alarm(index)
+            
             self.save_reminders()
             self.refresh_reminder_list()
-            
-            if platform == 'android':
-                Clock.schedule_once(lambda dt: start_background_service(), 0.5)
 
     def delete_reminder(self, index):
         if 0 <= index < len(self.reminders):
@@ -1278,12 +1289,13 @@ The app will request these permissions automatically."""
                 reminder_key = f"{index}_{reminder['time'].hour:02d}{reminder['time'].minute:02d}"
                 self.triggered_reminders.discard(reminder_key)
                 
+                # Cancel alarm
+                if platform == 'android':
+                    cancel_alarm(index)
+                
                 del self.reminders[index]
                 self.save_reminders()
                 self.refresh_reminder_list()
-                
-                if platform == 'android':
-                    Clock.schedule_once(lambda dt: start_background_service(), 0.5)
                 
                 confirm_popup.dismiss()
             
@@ -1493,7 +1505,7 @@ The app will request these permissions automatically."""
                 print(f"Notification error: {e}")
 
     def check_reminders(self, dt):
-        """Check reminders with improved accuracy"""
+        """Check reminders - backup to AlarmManager"""
         try:
             now = datetime.datetime.now()
             current_minute = now.hour * 60 + now.minute
@@ -1511,12 +1523,21 @@ The app will request these permissions automatically."""
                 
                 reminder_key = f"{idx}_{r['time'].hour:02d}{r['time'].minute:02d}"
                 
+                # Handle snooze
                 if r.get('snooze_until'):
                     if now >= r['snooze_until']:
                         print(f"Snooze ended for reminder {idx}")
                         r['snooze_until'] = None
                         r['played'] = False
                         self.triggered_reminders.discard(reminder_key)
+                        # Reschedule alarm after snooze ends
+                        if platform == 'android':
+                            schedule_exact_alarm(
+                                idx, r['time'].hour, r['time'].minute,
+                                r.get('days', list(range(7))), r['text'],
+                                r.get('category', 'Personal'), r.get('note', ''),
+                                r.get('priority', 'Medium')
+                            )
                     else:
                         continue
                 
@@ -1525,11 +1546,12 @@ The app will request these permissions automatically."""
                 
                 reminder_time = r['time'].replace(second=0, microsecond=0)
                 if reminder_time == current_time and not r['played'] and reminder_key not in self.triggered_reminders:
-                    print(f"Triggering reminder {idx}: {r['text']}")
+                    print(f"Backup trigger for reminder {idx}: {r['text']}")
                     self.show_alarm(r, idx)
                     r['played'] = True
                     self.triggered_reminders.add(reminder_key)
             
+            # Midnight reset
             if current_time.hour == 0 and current_time.minute == 0:
                 print("Midnight reset")
                 for r in self.reminders:
@@ -1542,17 +1564,22 @@ The app will request these permissions automatically."""
 
     def snooze_alarm(self, reminder, idx):
         """Snooze the alarm"""
-        reminder['snooze_until'] = datetime.datetime.now() + datetime.timedelta(minutes=self.snooze_minutes)
+        snooze_time = datetime.datetime.now() + datetime.timedelta(minutes=self.snooze_minutes)
+        reminder['snooze_until'] = snooze_time
         reminder['played'] = True
         
         reminder_key = f"{idx}_{reminder['time'].hour:02d}{reminder['time'].minute:02d}"
         self.triggered_reminders.discard(reminder_key)
         
+        # Cancel current alarm
+        if platform == 'android':
+            cancel_alarm(idx)
+        
         if self.alarm_popup:
             self.alarm_popup.dismiss()
         
         self.stop_ringtone()
-        print(f"Snoozed for {self.snooze_minutes} minutes")
+        print(f"Snoozed for {self.snooze_minutes} minutes until {snooze_time.strftime('%I:%M %p')}")
 
     def show_alarm(self, reminder, idx):
         """Show alarm popup with enhanced design"""
@@ -1721,7 +1748,7 @@ The app will request these permissions automatically."""
 
     def on_pause(self):
         """Handle app going to background"""
-        print("App pausing - service continues in background")
+        print("App pausing - alarms continue via AlarmManager")
         return True
 
     def on_resume(self):
@@ -1729,6 +1756,10 @@ The app will request these permissions automatically."""
         print("App resuming")
         self.refresh_reminder_list()
         self.last_check_minute = -1
+        
+        # Ensure all alarms are scheduled
+        if platform == 'android':
+            Clock.schedule_once(lambda dt: reschedule_all_alarms(self.reminders), 1)
 
     def on_stop(self):
         """Handle app stopping"""
