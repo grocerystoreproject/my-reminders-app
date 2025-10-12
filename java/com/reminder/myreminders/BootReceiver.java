@@ -5,6 +5,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+/**
+ * Reschedules all alarms after device boot
+ * This ensures reminders continue working after phone restart
+ */
 public class BootReceiver extends BroadcastReceiver {
     
     private static final String TAG = "MyReminders";
@@ -16,7 +20,18 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) || 
             "android.intent.action.QUICKBOOT_POWERON".equals(action)) {
             
-            Log.d(TAG, "Device booted - alarms need rescheduling");
+            Log.d(TAG, "Device booted - launching app to reschedule alarms");
+            
+            // Launch app to reschedule alarms
+            Intent launchIntent = context.getPackageManager()
+                .getLaunchIntentForPackage(context.getPackageName());
+            
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                launchIntent.putExtra("reschedule_alarms", true);
+                context.startActivity(launchIntent);
+                Log.d(TAG, "App launched for alarm rescheduling");
+            }
         }
     }
 }
